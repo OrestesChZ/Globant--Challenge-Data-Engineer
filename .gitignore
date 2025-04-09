@@ -1,0 +1,8 @@
+#Vuelve a la cuenta de almacenamiento → "Access keys"
+UfcoWhoLzquWPzpT/aP3eksWYFOxz3sUFkxqYkOzogeO/gq3iAP4Ln4dfN7SDKUV//BsP78LDXst+ASttnEIaQ==
+
+#Connectio String
+DefaultEndpointsProtocol=https;AccountName=storageglobantorestes;AccountKey=UfcoWhoLzquWPzpT/aP3eksWYFOxz3sUFkxqYkOzogeO/gq3iAP4Ln4dfN7SDKUV//BsP78LDXst+ASttnEIaQ==;EndpointSuffix=core.windows.net
+
+#ODBC (Includes Node.js) (SQL authentication)
+Driver={ODBC Driver 18 for SQL Server};Server=tcp:orestes-sqlserver.database.windows.net,1433;Database=globantdb;Uid=adminochz;Pwd={your_password_here};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
