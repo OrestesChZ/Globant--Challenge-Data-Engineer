@@ -45,12 +45,12 @@ def read_root():
 def employees_by_job_and_department():
     query = """
         SELECT Job_Id, Department_Id,
-               SUM(CASE WHEN DateHired BETWEEN '2021-01-01' AND '2021-03-31' THEN 1 ELSE 0 END) AS Q1,
-               SUM(CASE WHEN DateHired BETWEEN '2021-04-01' AND '2021-06-30' THEN 1 ELSE 0 END) AS Q2,
-               SUM(CASE WHEN DateHired BETWEEN '2021-07-01' AND '2021-09-30' THEN 1 ELSE 0 END) AS Q3,
-               SUM(CASE WHEN DateHired BETWEEN '2021-10-01' AND '2021-12-31' THEN 1 ELSE 0 END) AS Q4
+               SUM(CASE WHEN DateTime BETWEEN '2021-01-01' AND '2021-03-31' THEN 1 ELSE 0 END) AS Q1,
+               SUM(CASE WHEN DateTime BETWEEN '2021-04-01' AND '2021-06-30' THEN 1 ELSE 0 END) AS Q2,
+               SUM(CASE WHEN DateTime BETWEEN '2021-07-01' AND '2021-09-30' THEN 1 ELSE 0 END) AS Q3,
+               SUM(CASE WHEN DateTime BETWEEN '2021-10-01' AND '2021-12-31' THEN 1 ELSE 0 END) AS Q4
         FROM Employees
-        WHERE DateHired BETWEEN '2021-01-01' AND '2021-12-31'
+        WHERE DateTime BETWEEN '2021-01-01' AND '2021-12-31'
         GROUP BY Job_Id, Department_Id
         ORDER BY Job_Id, Department_Id
     """
@@ -63,14 +63,14 @@ def departments_above_average():
         WITH DepartmentHiring AS (
             SELECT Department_Id, COUNT(*) AS EmployeesHired
             FROM Employees
-            WHERE DateHired BETWEEN '2021-01-01' AND '2021-12-31'
+            WHERE DateTime BETWEEN '2021-01-01' AND '2021-12-31'
             GROUP BY Department_Id
         ),
         AverageHiring AS (
             SELECT AVG(EmployeesHired) AS AvgHiring
             FROM DepartmentHiring
         )
-        SELECT d.Department_Id, d.Department, dh.EmployeesHired
+        SELECT d.Id AS Department_Id, d.Department, dh.EmployeesHired
         FROM DepartmentHiring dh
         JOIN Departments d ON dh.Department_Id = d.Id
         WHERE dh.EmployeesHired > (SELECT AvgHiring FROM AverageHiring)
@@ -78,6 +78,7 @@ def departments_above_average():
     """
     result = execute_query(query)
     return {"data": result.to_dict(orient='records')}
+
 
 def read_csv_from_blob(blob_name: str) -> pd.DataFrame:
     blob_service_client = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
