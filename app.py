@@ -236,18 +236,21 @@ def upload_csv_to_sql(
 @app.get("/employees-by-job-and-department")
 def employees_by_job_and_department():
     query = """
-        SELECT Job_Id, Department_Id,
-               SUM(CASE WHEN DateTime BETWEEN '2021-01-01' AND '2021-03-31' THEN 1 ELSE 0 END) AS Q1,
-               SUM(CASE WHEN DateTime BETWEEN '2021-04-01' AND '2021-06-30' THEN 1 ELSE 0 END) AS Q2,
-               SUM(CASE WHEN DateTime BETWEEN '2021-07-01' AND '2021-09-30' THEN 1 ELSE 0 END) AS Q3,
-               SUM(CASE WHEN DateTime BETWEEN '2021-10-01' AND '2021-12-31' THEN 1 ELSE 0 END) AS Q4
-        FROM Employees
-        WHERE DateTime BETWEEN '2021-01-01' AND '2021-12-31'
-        GROUP BY Job_Id, Department_Id
-        ORDER BY Job_Id, Department_Id
+        SELECT d.Department, j.Job, 
+               SUM(CASE WHEN e.DateTime BETWEEN '2021-01-01' AND '2021-03-31' THEN 1 ELSE 0 END) AS Q1,
+               SUM(CASE WHEN e.DateTime BETWEEN '2021-04-01' AND '2021-06-30' THEN 1 ELSE 0 END) AS Q2,
+               SUM(CASE WHEN e.DateTime BETWEEN '2021-07-01' AND '2021-09-30' THEN 1 ELSE 0 END) AS Q3,
+               SUM(CASE WHEN e.DateTime BETWEEN '2021-10-01' AND '2021-12-31' THEN 1 ELSE 0 END) AS Q4
+        FROM Employees e
+        JOIN Jobs j ON e.Job_Id = j.Id
+        JOIN Departments d ON e.Department_Id = d.Id
+        WHERE e.DateTime BETWEEN '2021-01-01' AND '2021-12-31'
+        GROUP BY j.Job, d.Department
+        ORDER BY j.Job, d.Department
     """
     result = execute_query(query)
     return {"data": result.to_dict(orient='records')}
+
 
 @app.get("/departments-above-average")
 def departments_above_average():

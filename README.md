@@ -14,7 +14,7 @@ This project involves building a REST API to handle data migration from CSV file
 # Azure Web App
 The application is deployed to Azure App Service. You can access the API at the following URL:
 
-API URL
+[API URL](https://fastapiorestes7-hjarejg6gpdggdbh.brazilsouth-01.azurewebsites.net/docs)
 
 
 ## Setup
