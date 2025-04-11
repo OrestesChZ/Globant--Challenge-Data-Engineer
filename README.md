@@ -1,6 +1,6 @@
 # Data Engineering Challenge - Globant
 
-This project is designed to meet the requirements of the Data Engineer challenge at Globant. It involves building a REST API to handle data migration from CSV files into an SQL database, performing batch transactions, and providing endpoints to explore and analyze the data.
+This project involves building a REST API to handle data migration from CSV files into an SQL database, performing batch transactions, and providing endpoints to explore and analyze the data.
 
 ## Project Structure
 
