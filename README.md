@@ -16,6 +16,8 @@ The application is deployed to Azure App Service. You can access the API at the 
 
 [API URL](https://fastapiorestes7-hjarejg6gpdggdbh.brazilsouth-01.azurewebsites.net/docs)
 
+# Power BI reporting
+Stakeholder can access this link to see the results of the querys: 
 
 ## Setup
 
