@@ -3,9 +3,10 @@ from fastapi.security import APIKeyHeader
 import pandas as pd
 import pyodbc
 from azure.storage.blob import BlobServiceClient
+from datetime import datetime
 from azure.core.exceptions import ResourceNotFoundError
 from io import StringIO, BytesIO
-from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, DateTime, text
+from sqlalchemy import create_engine, Table, Column, Integer, String, MetaData, DateTime, text, ForeignKey, ForeignKeyConstraint, inspect
 import urllib
 import fastavro
 
@@ -40,6 +41,197 @@ def execute_query(query: str):
 @app.get("/")
 def read_root():
     return {"message": "API para el desafío de Data Engineer en Globant. Usa /docs para probar los endpoints."}
+
+
+##############################
+
+# Función para verificar si una tabla existe
+def check_if_table_exists(engine, table_name):
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
+    inspector = inspect(engine)
+    return table_name in inspector.get_table_names()
+
+#####################################################
+
+@app.post("/create-tables", dependencies=[Depends(verify_api_key)])
+def create_all_tables():
+    try:
+        messages = []
+
+        if create_table_departments():
+            messages.append("Tabla 'Departments' creada.")
+        else:
+            messages.append("Tabla 'Departments' ya existía.")
+
+        if create_table_jobs():
+            messages.append("Tabla 'Jobs' creada.")
+        else:
+            messages.append("Tabla 'Jobs' ya existía.")
+
+        if create_table_employees():
+            messages.append("Tabla 'Employees' creada.")
+        else:
+            messages.append("Tabla 'Employees' ya existía.")
+
+        return {"message": messages}
+    
+    except Exception as e:
+        return {"error": f"Ocurrió un error: {str(e)}"}
+
+####
+
+metadata = MetaData()
+
+def create_table_departments():
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
+    if check_if_table_exists(engine, "Departments"):
+        print("La tabla 'Departments' ya existe. No se creará nuevamente.")
+        return False
+    table = Table("Departments", metadata,
+        Column('Id', Integer, primary_key=True, autoincrement=False),
+        Column('Department', String(100), nullable=False)
+    )
+    metadata.create_all(engine)
+    return True
+
+####
+
+def create_table_jobs():
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
+    if check_if_table_exists(engine, "Jobs"):
+        print("La tabla 'Jobs' ya existe. No se creará nuevamente.")
+        return False
+    table = Table("Jobs", metadata,
+        Column('Id', Integer, primary_key=True, autoincrement=False),
+        Column('Job', String(100), nullable=False)
+    )
+    metadata.create_all(engine)
+    return True
+
+###
+
+def create_table_employees():
+    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
+    if check_if_table_exists(engine, "Employees"):
+        print("La tabla 'Employees' ya existe. No se creará nuevamente.")
+        return False
+    table = Table("Employees", metadata,
+        Column('Id', Integer, primary_key=True, autoincrement=False),
+        Column('Name', String(250), nullable=False),
+        Column('DateTime', DateTime, nullable=True),
+        Column('Department_Id', Integer, ForeignKey('Departments.Id'), nullable=False),
+        Column('Job_Id', Integer, ForeignKey('Jobs.Id'), nullable=True),
+        Column('DateCreate', DateTime, nullable=False, server_default=text('GETDATE()')),
+        Column('DateUpdate', DateTime, nullable=True)
+    )
+    metadata.create_all(engine)
+    return True
+
+#################################################
+
+@app.post("/upload-csv", dependencies=[Depends(verify_api_key)]) 
+def upload_csv_to_sql(
+    blob_name: str,
+    table_name: str,
+    container_name: str = "csv-files"
+):
+    try:
+        # Recortar espacios del blob_name
+        blob_name = blob_name.strip()
+
+        # Cliente de Blob
+        blob_client = blob_service_client.get_blob_client(container=container_name, blob=f"{blob_name}.csv")
+
+        # Verificar existencia del blob
+        try:
+            blob_client.get_blob_properties()
+        except ResourceNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Blob '{blob_name}.csv' no encontrado en el contenedor '{container_name}'")
+
+        # Leer CSV sin encabezado
+        stream = StringIO(blob_client.download_blob().readall().decode('utf-8'))
+
+        # Asignar columnas manualmente
+        if blob_name == "jobs":
+            column_names = ["Id", "Job"]
+        elif blob_name == "departments":
+            column_names = ["Id", "Department"]
+        elif blob_name == "hired_employees":
+            column_names = ["Id", "Name", "DateTime", "Department_Id", "Job_Id"]
+        else:
+            raise HTTPException(status_code=400, detail=f"Archivo {blob_name} no reconocido.")
+
+        df = pd.read_csv(stream, header=None, names=column_names)
+        df.dropna(axis=1, how='all', inplace=True)
+        df.dropna(axis=0, how='any', inplace=True)
+
+        # Convertir DateTime si existe
+        if "DateTime" in df.columns:
+            df["DateTime"] = pd.to_datetime(df["DateTime"], errors='coerce')
+            df.dropna(subset=["DateTime"], inplace=True)
+
+        with pyodbc.connect(get_db_connection()) as conn:
+            cursor = conn.cursor()
+
+            # Verificar si la tabla ya existe
+            cursor.execute("""
+                SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?
+            """, (table_name,))
+            table_exists = cursor.fetchone()[0] == 1
+
+            # Si la tabla no existe, lanzar error
+            if not table_exists:
+                raise HTTPException(status_code=400, detail=f"La tabla '{table_name}' no existe. Debes crearla primero usando el endpoint /create-tables.")
+
+            # Obtener columnas reales de la tabla
+            cursor.execute("""
+                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?
+            """, (table_name,))
+            existing_columns = {row[0] for row in cursor.fetchall()}
+
+            # Preparar columnas
+            cols_to_insert = [col for col in df.columns if col in existing_columns]
+            cols_to_update = [col for col in cols_to_insert if col.lower() != "id"]
+
+            use_date_create = "DateCreate" in existing_columns
+            use_date_update = "DateUpdate" in existing_columns
+
+            for _, row in df.iterrows():
+                insert_cols = cols_to_insert.copy()
+                update_set = [f"target.{col} = source.{col}" for col in cols_to_update]
+
+                if use_date_create and use_date_update:
+                    insert_cols += ["DateCreate", "DateUpdate"]
+                    update_set.append("target.DateUpdate = GETDATE()")
+
+                source_placeholders = ', '.join(['?' for _ in insert_cols])
+                source_cols = ', '.join(insert_cols)
+                update_clause = ', '.join(update_set)
+
+                merge_sql = f"""
+                    MERGE INTO {table_name} AS target
+                    USING (VALUES ({source_placeholders})) AS source ({source_cols})
+                    ON target.Id = source.Id
+                    WHEN MATCHED THEN UPDATE SET {update_clause}
+                    WHEN NOT MATCHED THEN INSERT ({source_cols}) VALUES ({source_placeholders});
+                """
+
+                params = [row[col] for col in cols_to_insert]
+                if use_date_create and use_date_update:
+                    params += [datetime.now(), datetime.now()]
+                cursor.execute(merge_sql, params + params)
+
+            conn.commit()
+        return {"message": f"Datos de {blob_name}.csv cargados correctamente en '{table_name}'."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+##############################################
+
 
 @app.get("/employees-by-job-and-department")
 def employees_by_job_and_department():
@@ -91,6 +283,7 @@ def read_csv_from_blob(blob_name: str) -> pd.DataFrame:
     except ResourceNotFoundError:
         raise HTTPException(status_code=404, detail=f"El archivo '{blob_name}' no existe en el contenedor.")
 
+    # Asignar nombres de columnas según el archivo
     if blob_name == "jobs.csv":
         column_names = ["Id", "Job"]
     elif blob_name == "departments.csv":
@@ -100,13 +293,17 @@ def read_csv_from_blob(blob_name: str) -> pd.DataFrame:
     else:
         raise HTTPException(status_code=400, detail=f"Archivo {blob_name} no reconocido.")
 
+    # Leer CSV sin encabezados y asignar nombres de columnas
     df = pd.read_csv(StringIO(csv_data), header=None, names=column_names)
 
-    # Limpiar las columnas DateTime y convertir a formato adecuado
-    df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')  # Asegurarse de que sea datetime
-    df.dropna(subset=['DateTime'], inplace=True)  # Eliminar filas con valores NaT (invalidados)
+    # Si existe la columna DateTime, procesarla
+    if "DateTime" in df.columns:
+        df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')  # Convertir a datetime
+        df.dropna(subset=['DateTime'], inplace=True)  # Eliminar filas inválidas
 
     return df
+
+#########
 
 def backup_table(query, avro_schema, avro_file):
     conn = pyodbc.connect(get_db_connection())
@@ -123,124 +320,14 @@ def backup_table(query, avro_schema, avro_file):
 
     return f'Archivo {avro_file} subido exitosamente al contenedor {container_name}'
 
-def create_table_employees():
-    metadata = MetaData()
-    table = Table("Employees", metadata,
-        Column('Id', Integer, primary_key=True),
-        Column('Name', String(250), nullable=False),
-        Column('DateTime', DateTime, nullable=True),  # Cambiado a DATETIME
-        Column('Department_Id', Integer, nullable=False),
-        Column('Job_Id', Integer, nullable=True),
-        Column('DateCreate', DateTime, nullable=False, server_default=text('GETDATE()')),
-        Column('DateUpdate', DateTime, nullable=True)
-    )
-    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
-    metadata.drop_all(engine, [table])
-    metadata.create_all(engine)
+######
 
-def create_table_departments():
-    metadata = MetaData()
-    table = Table("Departments", metadata,
-        Column('Id', Integer, primary_key=True),
-        Column('Department', String(100), nullable=False)
-    )
-    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
-    metadata.drop_all(engine, [table])
-    metadata.create_all(engine)
 
-def create_table_jobs():
-    metadata = MetaData()
-    table = Table("Jobs", metadata,
-        Column('Id', Integer, primary_key=True),
-        Column('Job', String(100), nullable=False)
-    )
-    engine = create_engine(f"mssql+pyodbc:///?odbc_connect={urllib.parse.quote_plus(get_db_connection())}")
-    metadata.drop_all(engine, [table])
-    metadata.create_all(engine)
 
-@app.post("/create-tables", dependencies=[Depends(verify_api_key)])
-def create_all_tables():
-    create_table_employees()
-    create_table_departments()
-    create_table_jobs()
-    return {"message": "Todas las tablas fueron creadas correctamente."}
 
-@app.post("/upload-csv", dependencies=[Depends(verify_api_key)])
-def upload_csv_to_sql(
-    blob_name: str,
-    table_name: str,
-    new: bool = False,
-    container_name: str = "csv-files"  # Valor por defecto
-):
-    try:
-        # Obtener el cliente del blob
-        blob_client = blob_service_client.get_blob_client(container=container_name, blob=f"{blob_name}.csv")
 
-        # Verificar si el blob existe
-        try:
-            blob_client.get_blob_properties()  # Esto verifica si el blob existe
-        except ResourceNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Blob '{blob_name}.csv' no encontrado en el contenedor '{container_name}'")
 
-        # Leer el CSV desde el blob sin encabezados
-        stream = StringIO(blob_client.download_blob().readall().decode('utf-8'))
-        df = pd.read_csv(stream, header=None)  # Sin encabezados
 
-        # Limpiar comas vacías y eliminar las columnas vacías
-        df = df.dropna(axis=1, how='all')  # Elimina las columnas vacías (si existen)
-        df = df.dropna(axis=0, how='any')  # Elimina las filas con valores nulos en cualquier columna
 
-        # Asignar los nombres de las columnas manualmente (según el archivo hired_employees.csv)
-        df.columns = ["Id", "Name", "DateTime", "Department_Id", "Job_Id"]
-
-        # Limpiar los valores de las columnas numéricas y garantizar que todos los datos sean válidos
-        for column in df.columns:
-            if df[column].dtype == 'float64' or df[column].dtype == 'int64':
-                # Reemplazar valores no numéricos o NaN por un valor por defecto (0 o NULL dependiendo de lo que desees)
-                df[column] = pd.to_numeric(df[column], errors='coerce')  # Convierte a numérico, reemplazando errores por NaN
-                df[column] = df[column].fillna(0)  # O usa otro valor como 0 o NULL
-
-        # Asegurarse de que las columnas de fecha sean válidas
-        df['DateTime'] = pd.to_datetime(df['DateTime'], errors='coerce')  # Convertir la columna DateTime
-        df = df.dropna(subset=['DateTime'])  # Eliminar filas con valores NaT
-
-        # Conectar a la base de datos usando get_db_connection
-        with pyodbc.connect(get_db_connection()) as conn:
-            cursor = conn.cursor()
-
-            # Crear tabla si es necesario
-            if new:
-                columns = ", ".join([f"{col} NVARCHAR(MAX)" for col in df.columns])
-                columns += ", DateCreate DATETIME, DateUpdate DATETIME"
-                cursor.execute(f"IF OBJECT_ID('{table_name}', 'U') IS NOT NULL DROP TABLE {table_name};")
-                cursor.execute(f"CREATE TABLE {table_name} ({columns});")
-                if 'Id' in df.columns:
-                    cursor.execute(f"ALTER TABLE {table_name} ADD CONSTRAINT pk_{table_name} PRIMARY KEY (Id);")
-
-            # Construir y ejecutar la consulta MERGE para evitar duplicados
-            for _, row in df.iterrows():
-                col_names = ', '.join(df.columns)
-                param_placeholders = ', '.join(['?' for _ in df.columns])
-                params = list(row)
-
-                # Usar un alias único y evitar conflictos con los nombres de las etiquetas
-                merge_sql = f"""
-                    MERGE INTO {table_name} AS target
-                    USING (VALUES ({', '.join(['?' for _ in df.columns])})) AS source ({', '.join(df.columns)})
-                    ON target.Id = source.Id
-                    WHEN MATCHED THEN
-                        UPDATE SET {', '.join([f'target.{col} = source.{col}' for col in df.columns if col.lower() != 'id'])},
-                            target.DateUpdate = GETDATE()
-                    WHEN NOT MATCHED THEN
-                        INSERT ({col_names}, DateCreate, DateUpdate)
-                        VALUES ({', '.join(['?' for _ in df.columns])}, GETDATE(), GETDATE());
-                """
-                cursor.execute(merge_sql, tuple(params + params))  # Duplicar los params porque se usan dos veces
-
-            conn.commit()
-        return {"message": f"Datos de {blob_name}.csv cargados en {table_name} correctamente."}
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
