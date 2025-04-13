@@ -47,7 +47,7 @@ pip install -r requirements.txt
 
 #To run the FastAPI application locally without Docker, simply run:
 
-python app.py
+uvicorn app:app --reload
 
 
 ## Docker Setup
@@ -58,6 +58,12 @@ docker build -t fastapi-globant .
 
 docker run -p 8000:8000 fastapi-globant
 
+```
+## 🧱 Arquitectura del Proyecto
+
+A continuación, se muestra el diagrama de arquitectura de la solución:
+
+![Diagrama de Arquitectura](/arquitecturaChallenge.png)
 
 
 
