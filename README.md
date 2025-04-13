@@ -59,3 +59,6 @@ docker build -t fastapi-globant .
 docker run -p 8000:8000 fastapi-globant
 
 
+![image](https://github.com/user-attachments/assets/19d3e46a-7bfb-41ae-9e02-b99f36a2d474)
+
+
