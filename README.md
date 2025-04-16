@@ -17,7 +17,7 @@ The application is deployed to Azure App Service. You can access the API at the 
 [API URL](https://fastapiorestes7-hjarejg6gpdggdbh.brazilsouth-01.azurewebsites.net/docs)
 
 # Power BI reporting
-Stakeholder can access this link to see the results of the querys: 
+Stakeholder can access this link to see the results of the querys: https://app.powerbi.com/links/3hXa-R8gY1?ctid=edef029c-489f-4136-8f10-fe213603f574&pbi_source=linkShare
 
 ## Setup
 
@@ -64,6 +64,9 @@ docker run -p 8000:8000 fastapi-globant
 A continuación, se muestra el diagrama de arquitectura de la solución:
 
 ![Diagrama de Arquitectura](/arquitecturaChallenge.png)
+
+![image](https://github.com/user-attachments/assets/9ba5088a-b375-4090-b870-a05f7d268a89)
+
 
 
 
