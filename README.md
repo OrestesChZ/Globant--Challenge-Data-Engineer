@@ -67,6 +67,9 @@ A continuación, se muestra el diagrama de arquitectura de la solución:
 
 ![image](https://github.com/user-attachments/assets/9ba5088a-b375-4090-b870-a05f7d268a89)
 
+![image](https://github.com/user-attachments/assets/1127e364-6a4d-4db1-820d-0a380539d3f9)
+
+
 
 
 
